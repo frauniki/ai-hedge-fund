@@ -1,0 +1,60 @@
+# AI Hedge Fund - Trading Configuration
+# =====================================
+
+# Tickers to monitor and trade
+tickers:
+  - AAPL
+  - MSFT
+  - NVDA
+
+# LLM Model settings
+model:
+  name: "openai/gpt-oss-20b:free"
+  provider: "OpenRouter"
+
+# Redis settings
+redis:
+  url: "redis://localhost:6379"
+  channel: "trading_events"
+
+# Broker settings
+broker:
+  type: "mock"
+  initial_cash: 1000000
+  margin_requirement: 0.5
+  slippage: 0.001
+  max_slippage: 0.005
+
+# Event producer settings (financialdatasets)
+producer:
+  interval: 300 # seconds between price checks
+  alert_threshold: 2.0 # percentage change to trigger alert
+
+# Massive.com producer settings
+massive:
+  mode: polling # polling (free tier) or websocket (paid tier)
+  interval: 300 # seconds between price checks
+  alert_threshold: 2.0 # percentage change to trigger alert
+  rate_limit: 15 # seconds between API calls (free tier: 5 calls/min)
+
+# Event consumer settings (AI trader)
+consumer:
+  dry_run: false
+  min_confidence: 50 # minimum confidence to execute trade
+
+# Trading hours (US Eastern)
+market:
+  timezone: "US/Eastern"
+  open: "09:30"
+  close: "16:00"
+  holidays:
+    - "2025-01-01" # New Year's Day
+    - "2025-01-20" # MLK Day
+    - "2025-02-17" # Presidents Day
+    - "2025-04-18" # Good Friday
+    - "2025-05-26" # Memorial Day
+    - "2025-06-19" # Juneteenth
+    - "2025-07-04" # Independence Day
+    - "2025-09-01" # Labor Day
+    - "2025-11-27" # Thanksgiving
+    - "2025-12-25" # Christmas

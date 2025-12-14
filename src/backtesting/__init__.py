@@ -50,5 +50,3 @@ __all__ = [
     "compute_exposures",
     "OutputBuilder",
 ]
-
-

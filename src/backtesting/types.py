@@ -14,6 +14,7 @@ class Action(str, Enum):
     COVER = "cover"
     HOLD = "hold"
 
+
 # Backward-compatible alias
 ActionLiteral = Literal["buy", "sell", "short", "cover", "hold"]
 
@@ -101,5 +102,3 @@ class PerformanceMetrics(TypedDict, total=False):
     long_short_ratio: Optional[float]
     gross_exposure: Optional[float]
     net_exposure: Optional[float]
-
-

@@ -63,5 +63,3 @@ class AgentController:
             "analyst_signals": analyst_signals_in,
         }
         return normalized_output
-
-

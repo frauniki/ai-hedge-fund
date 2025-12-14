@@ -1,0 +1,90 @@
+services:
+  # ============================================
+  # Infrastructure
+  # ============================================
+  redis:
+    image: redis:8-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # Event-Driven Trading Services
+  # ============================================
+
+  # Option 1: financialdatasets.ai producer
+  financialdatasets:
+    profiles:
+      - financialdatasets
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: ai-hedge-fund
+    container_name: financialdatasets
+    volumes:
+      - ../.env:/app/.env
+      - ../config:/app/config
+    command: financialdatasets --config /app/config/trading.yaml
+    environment:
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: /app
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Option 2: Massive.com producer (real-time with paid plan, delayed with free)
+  # Requires MASSIVE_API_KEY in .env
+  massive:
+    profiles:
+      - massive
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: ai-hedge-fund
+    container_name: massive
+    volumes:
+      - ../.env:/app/.env
+      - ../config:/app/config
+    command: massive --config /app/config/trading.yaml
+    environment:
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: /app
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  consumer:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: ai-hedge-fund
+    container_name: consumer
+    volumes:
+      - ../.env:/app/.env
+      - ../config:/app/config
+      - ../data:/app/data
+    command: consume --config /app/config/trading.yaml
+    environment:
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: /app
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  redis_data:

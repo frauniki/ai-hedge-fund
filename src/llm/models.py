@@ -76,20 +76,14 @@ class LLMModel(BaseModel):
 # Load models from JSON file
 def load_models_from_json(json_path: str) -> List[LLMModel]:
     """Load models from a JSON file"""
-    with open(json_path, 'r') as f:
+    with open(json_path, "r") as f:
         models_data = json.load(f)
-    
+
     models = []
     for model_data in models_data:
         # Convert string provider to ModelProvider enum
         provider_enum = ModelProvider(model_data["provider"])
-        models.append(
-            LLMModel(
-                display_name=model_data["display_name"],
-                model_name=model_data["model_name"],
-                provider=provider_enum
-            )
-        )
+        models.append(LLMModel(display_name=model_data["display_name"], model_name=model_data["model_name"], provider=provider_enum))
     return models
 
 
@@ -114,7 +108,9 @@ OLLAMA_LLM_ORDER = [model.to_choice_tuple() for model in OLLAMA_MODELS]
 def get_model_info(model_name: str, model_provider: str) -> LLMModel | None:
     """Get model information by model_name"""
     all_models = AVAILABLE_MODELS + OLLAMA_MODELS
-    return next((model for model in all_models if model.model_name == model_name and model.provider == model_provider), None)
+    # Convert string provider to enum value for comparison
+    provider_value = model_provider.value if hasattr(model_provider, "value") else str(model_provider)
+    return next((model for model in all_models if model.model_name == model_name and model.provider.value == provider_value), None)
 
 
 def find_model_by_name(model_name: str) -> LLMModel | None:
@@ -125,14 +121,7 @@ def find_model_by_name(model_name: str) -> LLMModel | None:
 
 def get_models_list():
     """Get the list of models for API responses."""
-    return [
-        {
-            "display_name": model.display_name,
-            "model_name": model.model_name,
-            "provider": model.provider.value
-        }
-        for model in AVAILABLE_MODELS
-    ]
+    return [{"display_name": model.display_name, "model_name": model.model_name, "provider": model.provider.value} for model in AVAILABLE_MODELS]
 
 
 def get_model(model_name: str, model_provider: ModelProvider, api_keys: dict = None) -> ChatOpenAI | ChatGroq | ChatOllama | GigaChat | None:
@@ -184,11 +173,11 @@ def get_model(model_name: str, model_provider: ModelProvider, api_keys: dict = N
         if not api_key:
             print(f"API Key Error: Please make sure OPENROUTER_API_KEY is set in your .env file or provided via API keys.")
             raise ValueError("OpenRouter API key not found. Please make sure OPENROUTER_API_KEY is set in your .env file or provided via API keys.")
-        
+
         # Get optional site URL and name for headers
         site_url = os.getenv("YOUR_SITE_URL", "https://github.com/virattt/ai-hedge-fund")
         site_name = os.getenv("YOUR_SITE_NAME", "AI Hedge Fund")
-        
+
         return ChatOpenAI(
             model=model_name,
             openai_api_key=api_key,
@@ -198,7 +187,7 @@ def get_model(model_name: str, model_provider: ModelProvider, api_keys: dict = N
                     "HTTP-Referer": site_url,
                     "X-Title": site_name,
                 }
-            }
+            },
         )
     elif model_provider == ModelProvider.XAI:
         api_key = (api_keys or {}).get("XAI_API_KEY") or os.getenv("XAI_API_KEY")
@@ -209,7 +198,7 @@ def get_model(model_name: str, model_provider: ModelProvider, api_keys: dict = N
     elif model_provider == ModelProvider.GIGACHAT:
         if os.getenv("GIGACHAT_USER") or os.getenv("GIGACHAT_PASSWORD"):
             return GigaChat(model=model_name)
-        else: 
+        else:
             api_key = (api_keys or {}).get("GIGACHAT_API_KEY") or os.getenv("GIGACHAT_API_KEY") or os.getenv("GIGACHAT_CREDENTIALS")
             if not api_key:
                 print("API Key Error: Please make sure api_keys is set in your .env file or provided via API keys.")

@@ -94,5 +94,3 @@ class OutputBuilder:
 
     def print_rows(self, rows: List[list]) -> None:
         print_backtest_results(rows)
-
-

@@ -75,5 +75,3 @@ class PerformanceMetricsCalculator:
             "max_drawdown": max_drawdown,
             "max_drawdown_date": max_drawdown_date,
         }
-
-
