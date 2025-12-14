@@ -63,6 +63,14 @@ class MassiveConfig:
 
 
 @dataclass
+class YfinanceConfig:
+    """yfinance producer configuration."""
+
+    interval: int = 300
+    alert_threshold: float = 2.0
+
+
+@dataclass
 class ConsumerConfig:
     """Event consumer configuration."""
 
@@ -74,10 +82,38 @@ class ConsumerConfig:
 class MarketConfig:
     """Market hours configuration."""
 
+    region: str = "us"  # us or japan
     timezone: str = "US/Eastern"
     open: str = "09:30"
     close: str = "16:00"
     holidays: List[str] = field(default_factory=list)
+
+    def __post_init__(self):
+        # Set defaults based on region if not explicitly configured
+        if self.region == "japan" and self.timezone == "US/Eastern":
+            self.timezone = "Asia/Tokyo"
+            self.open = "09:00"
+            self.close = "15:00"
+
+    @property
+    def currency(self) -> str:
+        """Get currency symbol for the market region."""
+        return "¥" if self.region == "japan" else "$"
+
+
+# Market presets
+MARKET_PRESETS = {
+    "us": {
+        "timezone": "US/Eastern",
+        "open": "09:30",
+        "close": "16:00",
+    },
+    "japan": {
+        "timezone": "Asia/Tokyo",
+        "open": "09:00",
+        "close": "15:00",
+    },
+}
 
 
 @dataclass
@@ -90,6 +126,7 @@ class TradingConfig:
     broker: BrokerConfig = field(default_factory=BrokerConfig)
     producer: ProducerConfig = field(default_factory=ProducerConfig)
     massive: MassiveConfig = field(default_factory=MassiveConfig)
+    yfinance: YfinanceConfig = field(default_factory=YfinanceConfig)
     consumer: ConsumerConfig = field(default_factory=ConsumerConfig)
     market: MarketConfig = field(default_factory=MarketConfig)
 
@@ -129,6 +166,7 @@ class TradingConfig:
             broker=BrokerConfig(**data.get("broker", {})),
             producer=ProducerConfig(**data.get("producer", {})),
             massive=MassiveConfig(**data.get("massive", {})),
+            yfinance=YfinanceConfig(**data.get("yfinance", {})),
             consumer=ConsumerConfig(**data.get("consumer", {})),
             market=MarketConfig(**data.get("market", {})),
         )
@@ -156,11 +194,16 @@ class TradingConfig:
                 "alert_threshold": self.massive.alert_threshold,
                 "rate_limit": self.massive.rate_limit,
             },
+            "yfinance": {
+                "interval": self.yfinance.interval,
+                "alert_threshold": self.yfinance.alert_threshold,
+            },
             "consumer": {
                 "dry_run": self.consumer.dry_run,
                 "min_confidence": self.consumer.min_confidence,
             },
             "market": {
+                "region": self.market.region,
                 "timezone": self.market.timezone,
                 "open": self.market.open,
                 "close": self.market.close,

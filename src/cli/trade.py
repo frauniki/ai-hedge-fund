@@ -24,6 +24,7 @@ from src.config import load_config, TradingConfig
 from src.main import run_hedge_fund
 from src.brokers import create_broker, Order, OrderSide, OrderType, PositionSide
 from src.tools.api import get_prices
+from src.utils.ticker import to_yfinance_ticker
 
 STATE_FILE = Path("data/broker_state.json")
 
@@ -34,8 +35,24 @@ def log(message: str, tz=None) -> None:
     print(f"[{now.strftime('%Y-%m-%d %H:%M:%S')}] {message}")
 
 
-def get_latest_price(ticker: str) -> float | None:
-    """Get the latest price for a ticker."""
+def get_latest_price(ticker: str, region: str = "us") -> float | None:
+    """Get the latest price for a ticker.
+
+    Args:
+        ticker: Stock ticker symbol
+        region: Market region ("us" or "japan")
+
+    Returns:
+        Latest price or None if unavailable
+    """
+    if region == "japan":
+        return _get_price_yfinance(ticker, region)
+    else:
+        return _get_price_financialdatasets(ticker)
+
+
+def _get_price_financialdatasets(ticker: str) -> float | None:
+    """Get price from financialdatasets.ai (US stocks)."""
     end_date = datetime.now().strftime("%Y-%m-%d")
     start_date = (datetime.now() - relativedelta(days=7)).strftime("%Y-%m-%d")
 
@@ -43,6 +60,26 @@ def get_latest_price(ticker: str) -> float | None:
         prices = get_prices(ticker, start_date, end_date)
         if prices:
             return prices[-1].close
+    except Exception as e:
+        print(f"Warning: Could not fetch price for {ticker}: {e}")
+    return None
+
+
+def _get_price_yfinance(ticker: str, region: str) -> float | None:
+    """Get price from yfinance (US and Japan stocks)."""
+    import yfinance as yf
+
+    try:
+        yf_ticker = to_yfinance_ticker(ticker, region)
+        stock = yf.Ticker(yf_ticker)
+
+        hist = stock.history(period="1d")
+        if not hist.empty:
+            return float(hist["Close"].iloc[-1])
+
+        info = stock.fast_info
+        if hasattr(info, "last_price") and info.last_price:
+            return float(info.last_price)
     except Exception as e:
         print(f"Warning: Could not fetch price for {ticker}: {e}")
     return None
@@ -97,7 +134,7 @@ def build_portfolio(broker, tickers: list[str], margin_requirement: float) -> di
     return portfolio
 
 
-def execute_trades(broker, decisions: dict, prices: dict, log_fn=print) -> None:
+def execute_trades(broker, decisions: dict, prices: dict, log_fn=print, currency: str = "$") -> None:
     """Execute trades based on AI decisions."""
     for ticker, decision in decisions.items():
         action = decision.get("action", "hold")
@@ -130,7 +167,7 @@ def execute_trades(broker, decisions: dict, prices: dict, log_fn=print) -> None:
 
         result = broker.submit_order(order)
         if result.is_filled:
-            log_fn(f"  {ticker}: {action.upper()} {result.quantity_filled} @ ${result.average_price:,.2f}")
+            log_fn(f"  {ticker}: {action.upper()} {result.quantity_filled} @ {currency}{result.average_price:,.2f}")
         else:
             log_fn(f"  {ticker}: {result.status.value} - {result.message}")
 
@@ -143,6 +180,8 @@ def execute_trades(broker, decisions: dict, prices: dict, log_fn=print) -> None:
 def cmd_run(args) -> None:
     """Run AI analysis and execute trades once."""
     config = load_config(args.config)
+    region = config.market.region
+    currency = config.market.currency
 
     # Handle --reset
     if args.reset:
@@ -174,18 +213,18 @@ def cmd_run(args) -> None:
         if positions:
             print("--- Updating Prices ---")
             for ticker in positions.keys():
-                price = get_latest_price(ticker)
+                price = get_latest_price(ticker, region)
                 if price:
                     broker.set_price(ticker, price)
-                    print(f"{ticker}: ${price:,.2f}")
+                    print(f"{ticker}: {currency}{price:,.2f}")
             print()
 
             print("--- Current Positions ---")
             for ticker, pos in broker.get_positions().items():
                 side = "LONG" if pos.side.value == "long" else "SHORT"
                 pnl_sign = "+" if pos.unrealized_pnl >= 0 else ""
-                print(f"{ticker}: {abs(pos.quantity)} shares ({side}) @ ${pos.average_cost:,.2f}")
-                print(f"        Current: ${pos.current_price:,.2f}  P&L: {pnl_sign}${pos.unrealized_pnl:,.2f}")
+                print(f"{ticker}: {abs(pos.quantity)} shares ({side}) @ {currency}{pos.average_cost:,.2f}")
+                print(f"        Current: {currency}{pos.current_price:,.2f}  P&L: {pnl_sign}{currency}{pos.unrealized_pnl:,.2f}")
             print()
 
         print(broker.get_performance_summary())
@@ -201,7 +240,7 @@ def cmd_run(args) -> None:
     print()
 
     account = broker.get_account()
-    print(f"Cash: ${account.cash:,.2f}")
+    print(f"Cash: {currency}{account.cash:,.2f}")
     print(f"Tickers: {', '.join(tickers)}")
     print(f"Model: {config.model.name} ({config.model.provider})")
     print(f"Mode: {'DRY RUN' if dry_run else 'LIVE (Mock)'}")
@@ -212,15 +251,15 @@ def cmd_run(args) -> None:
     print("--- Fetching Current Prices ---")
     prices = {}
     for ticker in tickers:
-        price = get_latest_price(ticker)
+        price = get_latest_price(ticker, region)
         if price:
             prices[ticker] = price
-            print(f"{ticker}: ${price:,.2f}")
+            print(f"{ticker}: {currency}{price:,.2f}")
         else:
             print(f"{ticker}: Price not available")
 
     if not prices:
-        print("\nError: No prices available. Check your FINANCIAL_DATASETS_API_KEY.")
+        print("\nError: No prices available. Check API key or network.")
         return
 
     broker.set_prices(prices)
@@ -276,7 +315,7 @@ def cmd_run(args) -> None:
         print("--- Dry Run Mode: No trades executed ---")
     else:
         print("--- Executing Trades ---")
-        execute_trades(broker, decisions, prices)
+        execute_trades(broker, decisions, prices, currency=currency)
         print()
 
         positions = broker.get_positions()
@@ -284,7 +323,7 @@ def cmd_run(args) -> None:
             print("--- Current Positions ---")
             for ticker, pos in positions.items():
                 side = "LONG" if pos.side.value == "long" else "SHORT"
-                print(f"{ticker}: {abs(pos.quantity)} shares ({side}) @ ${pos.average_cost:,.2f}")
+                print(f"{ticker}: {abs(pos.quantity)} shares ({side}) @ {currency}{pos.average_cost:,.2f}")
             print()
 
     print(broker.get_performance_summary())
@@ -303,6 +342,8 @@ def run_scheduled_job(config: TradingConfig) -> None:
     """Execute a single scheduled trading run."""
     tz = pytz.timezone(config.market.timezone)
     now = datetime.now(tz)
+    region = config.market.region
+    currency = config.market.currency
 
     log("=" * 50, tz)
     log("Starting trading job", tz)
@@ -327,7 +368,7 @@ def run_scheduled_job(config: TradingConfig) -> None:
     account = broker.get_account()
     tickers = config.tickers
 
-    log(f"Cash: ${account.cash:,.2f}", tz)
+    log(f"Cash: {currency}{account.cash:,.2f}", tz)
     log(f"Tickers: {', '.join(tickers)}", tz)
     log(f"Model: {config.model.name}", tz)
 
@@ -335,10 +376,10 @@ def run_scheduled_job(config: TradingConfig) -> None:
     log("Fetching current prices...", tz)
     prices = {}
     for ticker in tickers:
-        price = get_latest_price(ticker)
+        price = get_latest_price(ticker, region)
         if price:
             prices[ticker] = price
-            log(f"  {ticker}: ${price:,.2f}", tz)
+            log(f"  {ticker}: {currency}{price:,.2f}", tz)
         else:
             log(f"  {ticker}: Price not available", tz)
 
@@ -386,14 +427,14 @@ def run_scheduled_job(config: TradingConfig) -> None:
         log("Dry run mode - no trades executed", tz)
     else:
         log("Executing trades...", tz)
-        execute_trades(broker, decisions, prices, lambda msg: log(msg, tz))
+        execute_trades(broker, decisions, prices, lambda msg: log(msg, tz), currency=currency)
         broker.save_state()
 
     # Summary
     log("Performance Summary:", tz)
     summary = broker.get_performance_summary()
-    log(f"  Equity: ${summary.current_equity:,.2f}", tz)
-    log(f"  P&L: ${summary.total_pnl:,.2f} ({summary.total_pnl_percent:+.2f}%)", tz)
+    log(f"  Equity: {currency}{summary.current_equity:,.2f}", tz)
+    log(f"  P&L: {currency}{summary.total_pnl:,.2f} ({summary.total_pnl_percent:+.2f}%)", tz)
 
     log("Job complete", tz)
     log("", tz)

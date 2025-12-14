@@ -30,20 +30,27 @@ producer:
   interval: 300 # seconds between price checks
   alert_threshold: 2.0 # percentage change to trigger alert
 
-# Massive.com producer settings
+# Massive.com producer settings (US stocks only)
 massive:
   mode: polling # polling (free tier) or websocket (paid tier)
   interval: 300 # seconds between price checks
   alert_threshold: 2.0 # percentage change to trigger alert
   rate_limit: 15 # seconds between API calls (free tier: 5 calls/min)
 
+# yfinance producer settings (US and Japan stocks)
+yfinance:
+  interval: 300 # seconds between price checks
+  alert_threshold: 2.0 # percentage change to trigger alert
+
 # Event consumer settings (AI trader)
 consumer:
   dry_run: false
   min_confidence: 50 # minimum confidence to execute trade
 
-# Trading hours (US Eastern)
+# Market settings
+# region: us (US stocks) or japan (Japanese stocks)
 market:
+  region: us
   timezone: "US/Eastern"
   open: "09:30"
   close: "16:00"

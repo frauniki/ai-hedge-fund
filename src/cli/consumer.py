@@ -17,6 +17,7 @@ from src.config import load_config, TradingConfig
 from src.events import EventConsumer, EventType, TradingEvent
 from src.main import run_hedge_fund
 from src.brokers import create_broker, Order, OrderSide, OrderType, PositionSide
+from src.utils.ticker import to_yfinance_ticker
 
 STATE_FILE = Path("data/broker_state.json")
 
@@ -27,8 +28,24 @@ def log(message: str) -> None:
     print(f"[{now}] {message}")
 
 
-def get_latest_price(ticker: str) -> float | None:
-    """Get the latest price for a ticker."""
+def get_latest_price(ticker: str, region: str = "us") -> float | None:
+    """Get the latest price for a ticker.
+
+    Args:
+        ticker: Stock ticker symbol
+        region: Market region ("us" or "japan")
+
+    Returns:
+        Latest price or None if unavailable
+    """
+    if region == "japan":
+        return _get_price_yfinance(ticker, region)
+    else:
+        return _get_price_financialdatasets(ticker)
+
+
+def _get_price_financialdatasets(ticker: str) -> float | None:
+    """Get price from financialdatasets.ai (US stocks)."""
     from src.tools.api import get_prices
 
     end_date = datetime.now().strftime("%Y-%m-%d")
@@ -43,11 +60,33 @@ def get_latest_price(ticker: str) -> float | None:
     return None
 
 
+def _get_price_yfinance(ticker: str, region: str) -> float | None:
+    """Get price from yfinance (US and Japan stocks)."""
+    import yfinance as yf
+
+    try:
+        yf_ticker = to_yfinance_ticker(ticker, region)
+        stock = yf.Ticker(yf_ticker)
+
+        hist = stock.history(period="1d")
+        if not hist.empty:
+            return float(hist["Close"].iloc[-1])
+
+        info = stock.fast_info
+        if hasattr(info, "last_price") and info.last_price:
+            return float(info.last_price)
+    except Exception as e:
+        log(f"Warning: Could not fetch price for {ticker}: {e}")
+    return None
+
+
 class TradingEventHandler:
     """Handles trading events by running AI analysis and executing trades."""
 
     def __init__(self, config: TradingConfig):
         self.config = config
+        self.region = config.market.region
+        self.currency = config.market.currency
         self.broker = create_broker(
             initial_cash=config.broker.initial_cash,
             margin_requirement=config.broker.margin_requirement,
@@ -72,7 +111,7 @@ class TradingEventHandler:
 
         log("=" * 50)
         log(f"PRICE ALERT: {ticker}")
-        log(f"  Price: ${price:,.2f}" if price else "  Price: N/A")
+        log(f"  Price: {self.currency}{price:,.2f}" if price else "  Price: N/A")
         log(f"  Change: {change_pct:+.2f}%")
         log("=" * 50)
 
@@ -120,10 +159,10 @@ class TradingEventHandler:
         # Fetch prices
         prices = {}
         for ticker in tickers:
-            price = get_latest_price(ticker)
+            price = get_latest_price(ticker, self.region)
             if price:
                 prices[ticker] = price
-                log(f"  {ticker}: ${price:,.2f}")
+                log(f"  {ticker}: {self.currency}{price:,.2f}")
             else:
                 log(f"  {ticker}: Price unavailable")
 
@@ -200,7 +239,7 @@ class TradingEventHandler:
 
         # Show summary
         summary = self.broker.get_performance_summary()
-        log(f"Equity: ${summary.current_equity:,.2f}, P&L: {summary.total_pnl_percent:+.2f}%")
+        log(f"Equity: {self.currency}{summary.current_equity:,.2f}, P&L: {summary.total_pnl_percent:+.2f}%")
 
     def _execute_trades(self, decisions: dict, prices: dict) -> None:
         """Execute trades based on AI decisions."""
@@ -237,7 +276,7 @@ class TradingEventHandler:
 
             result = self.broker.submit_order(order)
             if result.is_filled:
-                log(f"  {ticker}: {action.upper()} {result.quantity_filled} @ ${result.average_price:,.2f}")
+                log(f"  {ticker}: {action.upper()} {result.quantity_filled} @ {self.currency}{result.average_price:,.2f}")
             else:
                 log(f"  {ticker}: {result.status.value} - {result.message}")
 

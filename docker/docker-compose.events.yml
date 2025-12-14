@@ -43,7 +43,30 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # Option 2: Massive.com producer (real-time with paid plan, delayed with free)
+  # Option 2: yfinance producer (US and Japan stocks)
+  # No API key required
+  yfinance:
+    profiles:
+      - yfinance
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: ai-hedge-fund
+    container_name: yfinance
+    volumes:
+      - ../.env:/app/.env
+      - ../config:/app/config
+    command: yfinance --config /app/config/trading.yaml
+    environment:
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: /app
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Option 3: Massive.com producer (real-time with paid plan, delayed with free)
   # Requires MASSIVE_API_KEY in .env
   massive:
     profiles:

@@ -27,6 +27,8 @@ class BasePriceMonitor(ABC):
         self.producer = producer
         self.last_prices: Dict[str, float] = {}
         self.running = False
+        self.region = config.market.region
+        self.currency = config.market.currency
 
     @property
     @abstractmethod
@@ -67,9 +69,9 @@ class BasePriceMonitor(ABC):
         )
 
         if event and event.event_type == EventType.PRICE_ALERT:
-            log(f"ALERT: {ticker} ${price:.2f} ({change_pct:+.2f}%)")
+            log(f"ALERT: {ticker} {self.currency}{price:.2f} ({change_pct:+.2f}%)")
         elif change_pct is not None and abs(change_pct) >= 0.1:
-            log(f"  {ticker}: ${price:.2f} ({change_pct:+.2f}%)")
+            log(f"  {ticker}: {self.currency}{price:.2f} ({change_pct:+.2f}%)")
 
     def run(self) -> None:
         """Run the price monitoring loop."""
@@ -93,7 +95,7 @@ class BasePriceMonitor(ABC):
             price = self.fetch_price(ticker)
             if price:
                 self.last_prices[ticker] = price
-                log(f"  {ticker}: ${price:,.2f}")
+                log(f"  {ticker}: {self.currency}{price:,.2f}")
             else:
                 log(f"  {ticker}: Failed to fetch")
 
